@@ -1,0 +1,745 @@
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TeleportService = game:GetService("TeleportService")
+local VirtualUser = game:GetService("VirtualUser")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterGui = game:GetService("StarterGui")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+
+local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+
+local Window = WindUI:CreateWindow({
+    Title = "Rivo Hub",
+    Author = player.Name,
+    Icon = "rbxassetid://7734053951",
+    Theme = "Dark",
+    Size = UDim2.fromOffset(600, 480),
+    Transparent = true,
+    Draggable = true,
+})
+
+pcall(function()
+    StarterGui:SetCore("SendNotification", {
+        Title = "Rivo Hub",
+        Text = "Welcome, " .. player.Name .. "!",
+        Duration = 5,
+    })
+end)
+
+local S = {
+    AutoFarm = false,
+    FastMode = false,
+    AutoTrain = false,
+    TrainingOnly = false,
+    AutoUpgradeTrain = false,
+    AutoBuyFood = false,
+    AutoUpgradeFence = false,
+    UseSuperThrows = false,
+    OfferAfter3Skips = false,
+    TrainingTime = 10,
+    ThrowsPerCycle = 10,
+    MinPetIncome = 0,
+    NeverSellPets = false,
+    ProtectedMutations = false,
+    ProtectedRarities = false,
+    AutoEquipBest = false,
+    AutoHatchEggs = false,
+    EggType = "Common",
+    PerfectThrows = false,
+    InstantInteract = false,
+    AntiAFK = false,
+    Noclip = false,
+    InfiniteJump = false,
+    Fly = false,
+    FlySpeed = 50,
+    WalkSpeed = 16,
+    JumpPower = 50,
+    HipHeight = 2,
+    NoRendering = false,
+    FPSCap = 60,
+    KeepRule = "Keep All",
+    SkipCount = 0,
+    Gravity = 196.2,
+}
+
+local CONFIG_FILE = "RivoHub_Config.json"
+
+local function saveConfig()
+    if not writefile then return end
+    local t = {}
+    for k, v in pairs(S) do
+        if type(v) ~= "function" then t[k] = v end
+    end
+    pcall(writefile, CONFIG_FILE, HttpService:JSONEncode(t))
+end
+
+local function loadConfig()
+    if not readfile or not isfile then return end
+    if not pcall(function() return isfile(CONFIG_FILE) end) then return end
+    local ok, data = pcall(function() return HttpService:JSONDecode(readfile(CONFIG_FILE)) end)
+    if ok and type(data) == "table" then
+        for k, v in pairs(data) do S[k] = v end
+    end
+end
+
+loadConfig()
+
+local Remotes = {}
+local function scanRemotes()
+    local function scan(obj)
+        for _, v in pairs(obj:GetDescendants()) do
+            if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
+                Remotes[v.Name:lower()] = v
+                Remotes[v.Name] = v
+            end
+        end
+    end
+    scan(ReplicatedStorage)
+    pcall(scan, game:GetService("Workspace"))
+end
+task.spawn(scanRemotes)
+
+local function fire(name, ...)
+    local r = Remotes[name] or Remotes[name:lower()]
+    if not r then return end
+    if r:IsA("RemoteEvent") then
+        pcall(r.FireServer, r, ...)
+    elseif r:IsA("RemoteFunction") then
+        return pcall(r.InvokeServer, r, ...)
+    end
+end
+
+local function fireAll(names, ...)
+    for _, n in ipairs(names) do fire(n, ...) end
+end
+
+local ThrowMeter, originalRun, throwWrapper
+local perfectActive = false
+
+local function setupMeter()
+    if ThrowMeter then return true end
+    local ok = pcall(function()
+        local Scripts = player:WaitForChild("PlayerScripts")
+        local Client = Scripts:WaitForChild("Client")
+        local Controllers = Client:WaitForChild("Controllers")
+        ThrowMeter = require(Controllers:WaitForChild("ThrowMeter"))
+        originalRun = ThrowMeter.Run
+    end)
+    return ok
+end
+
+local function enablePerfect()
+    if not setupMeter() then return end
+    if ThrowMeter.Run == throwWrapper then return end
+    throwWrapper = function(inst, ...)
+        if not perfectActive then return originalRun(inst, ...) end
+        local prev = ThrowMeter.TestAutoTap
+        ThrowMeter.TestAutoTap = 0.6
+        inst:SetLocked(true)
+        local res = table.pack(pcall(originalRun, inst, ...))
+        if ThrowMeter.TestAutoTap == 0.6 then ThrowMeter.TestAutoTap = prev end
+        if not res[1] then error(res[2], 0) end
+        return table.unpack(res, 2, res.n)
+    end
+    ThrowMeter.Run = throwWrapper
+    perfectActive = true
+end
+
+local function disablePerfect()
+    perfectActive = false
+    if ThrowMeter and originalRun and ThrowMeter.Run == throwWrapper then
+        ThrowMeter.Run = originalRun
+    end
+end
+
+local farmThread
+local function startFarm()
+    if farmThread then task.cancel(farmThread) end
+    farmThread = task.spawn(function()
+        while S.AutoFarm do
+            pcall(function()
+                if not S.TrainingOnly then
+                    for i = 1, S.ThrowsPerCycle do
+                        if not S.AutoFarm then break end
+                        fireAll({"ThrowFood","Throw","ThrowBall","ThrowItem"})
+                        task.wait(S.FastMode and 0.05 or 0.4)
+                    end
+                end
+                if S.AutoTrain or S.TrainingOnly then
+                    fireAll({"Train","StartTraining","DoTraining","PullUp"})
+                    task.wait(S.TrainingTime)
+                    fireAll({"StopTraining","EndTraining"})
+                    S.SkipCount = 0
+                elseif S.OfferAfter3Skips then
+                    S.SkipCount = S.SkipCount + 1
+                    if S.SkipCount >= 3 then
+                        fireAll({"Train","StartTraining","PullUp"})
+                        task.wait(S.TrainingTime)
+                        fireAll({"StopTraining","EndTraining"})
+                        S.SkipCount = 0
+                    end
+                end
+                if S.AutoBuyFood then
+                    fireAll({"BuyFood","UpgradeFood","PurchaseFood","BuyMoreFood"})
+                end
+                if S.AutoUpgradeFence then
+                    fireAll({"UpgradeFence","Fence","FenceUpgrade"})
+                end
+                if S.AutoUpgradeTrain then
+                    fireAll({"UpgradeTraining","UpgradeThrowPower","TrainingUpgrade"})
+                end
+                if S.UseSuperThrows then
+                    fireAll({"UseSuperThrow","SuperThrow","ActivateSuperThrow"})
+                end
+            end)
+            task.wait(0.1)
+        end
+    end)
+end
+
+local afkConn
+local function setupAFK()
+    if afkConn then afkConn:Disconnect() end
+    afkConn = RunService.Heartbeat:Connect(function()
+        if S.AntiAFK then
+            pcall(VirtualUser.CaptureController, VirtualUser)
+            pcall(VirtualUser.ClickButton2, VirtualUser, Vector2.zero)
+        end
+    end)
+end
+
+local noclipConn
+local function setupNoclip()
+    if noclipConn then noclipConn:Disconnect() end
+    noclipConn = RunService.Stepped:Connect(function()
+        if S.Noclip and player.Character then
+            for _, p in pairs(player.Character:GetDescendants()) do
+                if p:IsA("BasePart") then p.CanCollide = false end
+            end
+        end
+    end)
+end
+
+local flyConn
+local flyBody
+local function setupFly()
+    if flyConn then flyConn:Disconnect() end
+    flyConn = RunService.Heartbeat:Connect(function()
+        if S.Fly and player.Character then
+            local root = player.Character:FindFirstChild("HumanoidRootPart")
+            if not root then return end
+            if not flyBody or not flyBody.Parent then
+                flyBody = Instance.new("BodyVelocity")
+                flyBody.MaxForce = Vector3.new(1e5,1e5,1e5)
+                flyBody.Velocity = Vector3.zero
+                flyBody.Parent = root
+            end
+            local cam = workspace.CurrentCamera
+            local dir = Vector3.zero
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir += cam.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir -= cam.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir -= cam.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir += cam.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.yAxis end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then dir -= Vector3.yAxis end
+            flyBody.Velocity = dir.Magnitude > 0 and dir.Unit * S.FlySpeed or Vector3.zero
+            local hum = player.Character:FindFirstChildOfClass("Humanoid")
+            if hum then hum:ChangeState(Enum.HumanoidStateType.Physics) end
+        else
+            if flyBody and flyBody.Parent then flyBody:Destroy(); flyBody = nil end
+        end
+    end)
+end
+
+local jumpConn
+local function setupJump()
+    if jumpConn then jumpConn:Disconnect() end
+    jumpConn = UserInputService.JumpRequest:Connect(function()
+        if S.InfiniteJump and player.Character then
+            local hum = player.Character:FindFirstChildOfClass("Humanoid")
+            if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+        end
+    end)
+end
+
+local equip_thread
+local function setupAutoEquip()
+    if equip_thread then task.cancel(equip_thread) end
+    if not S.AutoEquipBest then return end
+    equip_thread = task.spawn(function()
+        while S.AutoEquipBest do
+            fireAll({"EquipBestPet","AutoEquip","EquipAnimal","EquipBestAnimal"})
+            task.wait(5)
+        end
+    end)
+end
+
+local hatch_thread
+local function setupAutoHatch()
+    if hatch_thread then task.cancel(hatch_thread) end
+    if not S.AutoHatchEggs then return end
+    hatch_thread = task.spawn(function()
+        while S.AutoHatchEggs do
+            fireAll({"HatchEgg","OpenEgg","HatchOwnedEgg","HatchCurrentEgg"}, S.EggType)
+            task.wait(1)
+        end
+    end)
+end
+
+local promptConn
+local function setupInstantInteract()
+    if promptConn then promptConn:Disconnect() end
+    promptConn = workspace.DescendantAdded:Connect(function(d)
+        if d:IsA("ProximityPrompt") and S.InstantInteract then
+            d.HoldDuration = 0
+            d.MaxActivationDistance = 100
+        end
+    end)
+    if S.InstantInteract then
+        for _, d in pairs(workspace:GetDescendants()) do
+            if d:IsA("ProximityPrompt") then
+                d.HoldDuration = 0
+                d.MaxActivationDistance = 100
+            end
+        end
+    end
+end
+
+local function serverHop(small)
+    task.spawn(function()
+        local ok, data = pcall(function()
+            return HttpService:JSONDecode(game:HttpGet(
+                ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=%s&limit=100"):format(
+                    game.PlaceId, small and "Asc" or "Desc"
+                )
+            ))
+        end)
+        if not ok or not data then return end
+        local pool = {}
+        for _, s in pairs(data.data or {}) do
+            if s.id ~= game.JobId then
+                if not small or (s.playing or 99) < 5 then
+                    table.insert(pool, s.id)
+                end
+            end
+        end
+        if #pool > 0 then
+            TeleportService:TeleportToPlaceInstance(game.PlaceId, pool[math.random(1,#pool)], player)
+        end
+    end)
+end
+
+local renderConn
+local function applyNoRender(state)
+    if renderConn then renderConn:Disconnect() end
+    local function applyPart(p)
+        if p:IsA("BasePart") and not (player.Character and player.Character:IsAncestorOf(p)) then
+            p.LocalTransparencyModifier = state and 1 or 0
+        end
+    end
+    for _, d in pairs(workspace:GetDescendants()) do applyPart(d) end
+    if state then
+        renderConn = workspace.DescendantAdded:Connect(applyPart)
+    end
+end
+
+local function applyCharStats()
+    if not player.Character then return end
+    local hum = player.Character:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+    hum.WalkSpeed = S.WalkSpeed
+    hum.JumpPower = S.JumpPower
+    hum.HipHeight = S.HipHeight
+end
+
+local statConn
+local function setupStatLoop()
+    if statConn then statConn:Disconnect() end
+    statConn = RunService.Heartbeat:Connect(applyCharStats)
+end
+
+setupStatLoop()
+
+player.CharacterAdded:Connect(function(char)
+    character = char
+    humanoid = char:WaitForChild("Humanoid")
+    if S.PerfectThrows then
+        task.delay(3, enablePerfect)
+    end
+    task.delay(0.5, applyCharStats)
+end)
+
+setupAFK()
+setupNoclip()
+setupFly()
+setupJump()
+setupInstantInteract()
+
+local FarmTab = Window:Tab({ Title = "Auto Farm", Icon = "home" })
+
+FarmTab:Toggle({
+    Title = "Auto Farm",
+    Value = S.AutoFarm,
+    Callback = function(v)
+        S.AutoFarm = v
+        if v then startFarm() end
+    end,
+})
+
+FarmTab:Dropdown({
+    Title = "Keep Rule",
+    Values = { "Keep All", "Minimum Income", "Improve Team" },
+    Value = S.KeepRule,
+    Callback = function(v) S.KeepRule = v end,
+})
+
+FarmTab:Toggle({
+    Title = "Fast Mode",
+    Value = S.FastMode,
+    Callback = function(v) S.FastMode = v end,
+})
+
+FarmTab:Toggle({
+    Title = "Auto Train",
+    Value = S.AutoTrain,
+    Callback = function(v) S.AutoTrain = v end,
+})
+
+FarmTab:Toggle({
+    Title = "Training Only",
+    Value = S.TrainingOnly,
+    Callback = function(v) S.TrainingOnly = v end,
+})
+
+FarmTab:Toggle({
+    Title = "Auto Upgrade Training",
+    Value = S.AutoUpgradeTrain,
+    Callback = function(v) S.AutoUpgradeTrain = v end,
+})
+
+FarmTab:Toggle({
+    Title = "Auto Buy Food / Upgrade",
+    Value = S.AutoBuyFood,
+    Callback = function(v) S.AutoBuyFood = v end,
+})
+
+FarmTab:Toggle({
+    Title = "Auto Upgrade Fence",
+    Value = S.AutoUpgradeFence,
+    Callback = function(v) S.AutoUpgradeFence = v end,
+})
+
+FarmTab:Toggle({
+    Title = "Use Earned Super Throws",
+    Value = S.UseSuperThrows,
+    Callback = function(v) S.UseSuperThrows = v end,
+})
+
+FarmTab:Toggle({
+    Title = "Offer Training After 3 Skips",
+    Value = S.OfferAfter3Skips,
+    Callback = function(v) S.OfferAfter3Skips = v end,
+})
+
+FarmTab:Slider({
+    Title = "Training Time (s)",
+    Value = { Min = 1, Max = 120, Default = S.TrainingTime },
+    Callback = function(v) S.TrainingTime = v end,
+})
+
+FarmTab:Slider({
+    Title = "Throws Per Cycle",
+    Value = { Min = 1, Max = 100, Default = S.ThrowsPerCycle },
+    Callback = function(v) S.ThrowsPerCycle = v end,
+})
+
+local PetTab = Window:Tab({ Title = "Pets", Icon = "star" })
+
+PetTab:Input({
+    Title = "Minimum Pet Income",
+    Value = tostring(S.MinPetIncome),
+    Callback = function(v) S.MinPetIncome = tonumber(v) or 0 end,
+})
+
+PetTab:Toggle({
+    Title = "Never Sell These Pets",
+    Value = S.NeverSellPets,
+    Callback = function(v) S.NeverSellPets = v end,
+})
+
+PetTab:Toggle({
+    Title = "Protected Mutations",
+    Value = S.ProtectedMutations,
+    Callback = function(v) S.ProtectedMutations = v end,
+})
+
+PetTab:Toggle({
+    Title = "Protected Rarities",
+    Value = S.ProtectedRarities,
+    Callback = function(v) S.ProtectedRarities = v end,
+})
+
+PetTab:Toggle({
+    Title = "Auto Equip Best Animals",
+    Value = S.AutoEquipBest,
+    Callback = function(v)
+        S.AutoEquipBest = v
+        setupAutoEquip()
+    end,
+})
+
+PetTab:Button({
+    Title = "Equip Best Animals",
+    Callback = function()
+        fireAll({"EquipBestPet","AutoEquip","EquipAnimal","EquipBestAnimal"})
+    end,
+})
+
+PetTab:Button({
+    Title = "Sell All (keeps protected)",
+    Callback = function()
+        fireAll({"SellAllPets","SellPets","SellAnimals","SellUnprotected"})
+    end,
+})
+
+PetTab:Button({
+    Title = "Claim Free Animal",
+    Callback = function()
+        fireAll({"ClaimFreeAnimal","FreeAnimal","ClaimPet","FreePet"})
+    end,
+})
+
+PetTab:Button({
+    Title = "Claim Offline Earnings",
+    Callback = function()
+        fireAll({"ClaimOffline","OfflineEarnings","CollectOffline","ClaimOfflineReward"})
+    end,
+})
+
+local EggTab = Window:Tab({ Title = "Eggs", Icon = "box" })
+
+EggTab:Toggle({
+    Title = "Auto Hatch Owned Eggs",
+    Value = S.AutoHatchEggs,
+    Callback = function(v)
+        S.AutoHatchEggs = v
+        setupAutoHatch()
+    end,
+})
+
+EggTab:Dropdown({
+    Title = "Egg Type",
+    Values = { "Common", "Rare", "Epic", "Legendary", "Mythical", "Event" },
+    Value = S.EggType,
+    Callback = function(v) S.EggType = v end,
+})
+
+EggTab:Button({
+    Title = "Hatch One Owned Egg",
+    Callback = function()
+        fireAll({"HatchEgg","OpenEgg","HatchOwnedEgg"}, S.EggType)
+    end,
+})
+
+EggTab:Button({
+    Title = "Open Egg Inventory",
+    Callback = function()
+        fireAll({"OpenEggInventory","EggInventory","ShowEggs"})
+    end,
+})
+
+local ThrowTab = Window:Tab({ Title = "Throws", Icon = "crosshair" })
+
+ThrowTab:Toggle({
+    Title = "Perfect Throws (100% accuracy)",
+    Value = S.PerfectThrows,
+    Callback = function(v)
+        S.PerfectThrows = v
+        if v then enablePerfect() else disablePerfect() end
+    end,
+})
+
+ThrowTab:Button({
+    Title = "Train Now",
+    Callback = function()
+        fireAll({"Train","StartTraining","PullUp","DoTraining"})
+    end,
+})
+
+ThrowTab:Button({
+    Title = "Stop Training",
+    Callback = function()
+        fireAll({"StopTraining","EndTraining","StopPullUp"})
+    end,
+})
+
+ThrowTab:Button({
+    Title = "Upgrade Training",
+    Callback = function()
+        fireAll({"UpgradeTraining","UpgradeThrowPower","TrainingUpgrade"})
+    end,
+})
+
+ThrowTab:Button({
+    Title = "Upgrade Food",
+    Callback = function()
+        fireAll({"UpgradeFood","BuyFood","FoodUpgrade","PurchaseFood"})
+    end,
+})
+
+ThrowTab:Button({
+    Title = "Upgrade Fence",
+    Callback = function()
+        fireAll({"UpgradeFence","FenceUpgrade","Fence"})
+    end,
+})
+
+local MiscTab = Window:Tab({ Title = "Misc", Icon = "settings" })
+
+MiscTab:Toggle({
+    Title = "Instant Interact",
+    Value = S.InstantInteract,
+    Callback = function(v)
+        S.InstantInteract = v
+        setupInstantInteract()
+    end,
+})
+
+MiscTab:Toggle({
+    Title = "Anti-AFK",
+    Value = S.AntiAFK,
+    Callback = function(v) S.AntiAFK = v end,
+})
+
+MiscTab:Toggle({
+    Title = "Noclip",
+    Value = S.Noclip,
+    Callback = function(v) S.Noclip = v end,
+})
+
+MiscTab:Toggle({
+    Title = "Infinite Jump",
+    Value = S.InfiniteJump,
+    Callback = function(v) S.InfiniteJump = v end,
+})
+
+MiscTab:Toggle({
+    Title = "Fly",
+    Value = S.Fly,
+    Callback = function(v) S.Fly = v end,
+})
+
+MiscTab:Slider({
+    Title = "Fly Speed",
+    Value = { Min = 10, Max = 500, Default = S.FlySpeed },
+    Callback = function(v) S.FlySpeed = v end,
+})
+
+MiscTab:Slider({
+    Title = "WalkSpeed",
+    Value = { Min = 16, Max = 500, Default = S.WalkSpeed },
+    Callback = function(v) S.WalkSpeed = v end,
+})
+
+MiscTab:Slider({
+    Title = "JumpPower",
+    Value = { Min = 50, Max = 500, Default = S.JumpPower },
+    Callback = function(v) S.JumpPower = v end,
+})
+
+MiscTab:Slider({
+    Title = "HipHeight",
+    Value = { Min = 0, Max = 20, Default = S.HipHeight },
+    Callback = function(v) S.HipHeight = v end,
+})
+
+MiscTab:Slider({
+    Title = "Gravity",
+    Value = { Min = 0, Max = 400, Default = S.Gravity },
+    Callback = function(v)
+        S.Gravity = v
+        workspace.Gravity = v
+    end,
+})
+
+MiscTab:Toggle({
+    Title = "No Rendering",
+    Value = S.NoRendering,
+    Callback = function(v)
+        S.NoRendering = v
+        applyNoRender(v)
+    end,
+})
+
+MiscTab:Slider({
+    Title = "FPS Cap",
+    Value = { Min = 1, Max = 240, Default = S.FPSCap },
+    Callback = function(v)
+        S.FPSCap = v
+        if setfpscap then setfpscap(v) end
+    end,
+})
+
+MiscTab:Button({
+    Title = "Load Infinite Yield",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))()
+    end,
+})
+
+MiscTab:Button({
+    Title = "Server Hop",
+    Callback = function() serverHop(false) end,
+})
+
+MiscTab:Button({
+    Title = "Join Small Server",
+    Callback = function() serverHop(true) end,
+})
+
+MiscTab:Button({
+    Title = "Rejoin",
+    Callback = function()
+        pcall(TeleportService.Teleport, TeleportService, game.PlaceId, player)
+    end,
+})
+
+MiscTab:Button({
+    Title = "Save Config",
+    Callback = function()
+        saveConfig()
+        pcall(function()
+            StarterGui:SetCore("SendNotification", {
+                Title = "Rivo Hub",
+                Text = "Config saved.",
+                Duration = 3,
+            })
+        end)
+    end,
+})
+
+MiscTab:Button({
+    Title = "Load Config",
+    Callback = function()
+        loadConfig()
+        pcall(function()
+            StarterGui:SetCore("SendNotification", {
+                Title = "Rivo Hub",
+                Text = "Config loaded.",
+                Duration = 3,
+            })
+        end)
+    end,
+})
+
+if S.AutoFarm then startFarm() end
+if S.PerfectThrows then task.delay(3, enablePerfect) end
+if S.AutoEquipBest then setupAutoEquip() end
+if S.AutoHatchEggs then setupAutoHatch() end
+applyCharStats()
