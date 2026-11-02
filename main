@@ -1,3 +1,207 @@
+local KeyPlayers = game:GetService("Players")
+local KeyGuiService = game:GetService("GuiService")
+local KeyPlayer = KeyPlayers.LocalPlayer
+local KeyPlayerGui = KeyPlayer:WaitForChild("PlayerGui")
+local KeyValue = "kairon-script"
+local KeyLink = "https://direct-link.net/10507362/4cYHkkOnry8b"
+local KeySignal = Instance.new("BindableEvent")
+local KeyVerified = false
+local KeyBusy = false
+
+local ExistingKeyGui = KeyPlayerGui:FindFirstChild("RivoHubKeySystem")
+if ExistingKeyGui then
+    ExistingKeyGui:Destroy()
+end
+
+local KeyScreen = Instance.new("ScreenGui")
+KeyScreen.Name = "RivoHubKeySystem"
+KeyScreen.ResetOnSpawn = false
+KeyScreen.IgnoreGuiInset = true
+KeyScreen.DisplayOrder = 1000000
+KeyScreen.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+KeyScreen.Parent = KeyPlayerGui
+
+local KeyMain = Instance.new("Frame")
+KeyMain.Name = "Main"
+KeyMain.Size = UDim2.fromOffset(370, 235)
+KeyMain.Position = UDim2.new(0.5, -185, 0.5, -117)
+KeyMain.BackgroundColor3 = Color3.fromRGB(20, 20, 29)
+KeyMain.BorderSizePixel = 0
+KeyMain.Parent = KeyScreen
+
+local KeyMainCorner = Instance.new("UICorner")
+KeyMainCorner.CornerRadius = UDim.new(0, 12)
+KeyMainCorner.Parent = KeyMain
+
+local KeyMainStroke = Instance.new("UIStroke")
+KeyMainStroke.Color = Color3.fromRGB(145, 85, 255)
+KeyMainStroke.Thickness = 1.5
+KeyMainStroke.Parent = KeyMain
+
+local KeyTitle = Instance.new("TextLabel")
+KeyTitle.Size = UDim2.new(1, -24, 0, 42)
+KeyTitle.Position = UDim2.fromOffset(12, 10)
+KeyTitle.BackgroundTransparency = 1
+KeyTitle.Text = "RIVO HUB"
+KeyTitle.TextColor3 = Color3.fromRGB(195, 155, 255)
+KeyTitle.Font = Enum.Font.GothamBold
+KeyTitle.TextSize = 21
+KeyTitle.Parent = KeyMain
+
+local KeySubtitle = Instance.new("TextLabel")
+KeySubtitle.Size = UDim2.new(1, -24, 0, 22)
+KeySubtitle.Position = UDim2.fromOffset(12, 48)
+KeySubtitle.BackgroundTransparency = 1
+KeySubtitle.Text = "Enter your access key to continue"
+KeySubtitle.TextColor3 = Color3.fromRGB(175, 175, 190)
+KeySubtitle.Font = Enum.Font.Gotham
+KeySubtitle.TextSize = 12
+KeySubtitle.Parent = KeyMain
+
+local KeyInput = Instance.new("TextBox")
+KeyInput.Size = UDim2.new(1, -40, 0, 42)
+KeyInput.Position = UDim2.fromOffset(20, 82)
+KeyInput.BackgroundColor3 = Color3.fromRGB(36, 36, 49)
+KeyInput.BorderSizePixel = 0
+KeyInput.PlaceholderText = "Enter key here"
+KeyInput.PlaceholderColor3 = Color3.fromRGB(135, 135, 150)
+KeyInput.Text = ""
+KeyInput.TextColor3 = Color3.fromRGB(245, 245, 250)
+KeyInput.Font = Enum.Font.Gotham
+KeyInput.TextSize = 14
+KeyInput.ClearTextOnFocus = false
+KeyInput.Parent = KeyMain
+
+local KeyInputCorner = Instance.new("UICorner")
+KeyInputCorner.CornerRadius = UDim.new(0, 8)
+KeyInputCorner.Parent = KeyInput
+
+local function createKeyButton(name, label, position, color)
+    local button = Instance.new("TextButton")
+    button.Name = name
+    button.Size = UDim2.new(0.5, -25, 0, 38)
+    button.Position = position
+    button.BackgroundColor3 = color
+    button.BorderSizePixel = 0
+    button.Text = label
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.Font = Enum.Font.GothamBold
+    button.TextSize = 12
+    button.AutoButtonColor = true
+    button.Parent = KeyMain
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = button
+    return button
+end
+
+local VerifyButton = createKeyButton("VerifyButton", "VERIFY KEY", UDim2.new(0, 20, 0, 139), Color3.fromRGB(125, 75, 220))
+local GetKeyButton = createKeyButton("GetKeyButton", "GET KEY", UDim2.new(0.5, 5, 0, 139), Color3.fromRGB(55, 55, 72))
+
+local KeyStatus = Instance.new("TextLabel")
+KeyStatus.Size = UDim2.new(1, -30, 0, 28)
+KeyStatus.Position = UDim2.fromOffset(15, 184)
+KeyStatus.BackgroundTransparency = 1
+KeyStatus.Text = "Waiting for key"
+KeyStatus.TextColor3 = Color3.fromRGB(170, 170, 185)
+KeyStatus.Font = Enum.Font.Gotham
+KeyStatus.TextSize = 12
+KeyStatus.Parent = KeyMain
+
+local function verifyKey()
+    if KeyBusy or KeyVerified then
+        return
+    end
+    local entered = KeyInput.Text:gsub("^%s*(.-)%s*$", "%1"):lower()
+    if entered ~= KeyValue:lower() then
+        KeyStatus.Text = "Invalid key. Please try again."
+        KeyStatus.TextColor3 = Color3.fromRGB(255, 95, 105)
+        KeyInput.Text = ""
+        return
+    end
+    KeyBusy = true
+    KeyVerified = true
+    KeyStatus.Text = "Key accepted. Loading Rivo Hub..."
+    KeyStatus.TextColor3 = Color3.fromRGB(100, 235, 140)
+    VerifyButton.Text = "VERIFIED"
+    task.delay(0.25, function()
+        if KeyScreen and KeyScreen.Parent then
+            KeyScreen:Destroy()
+        end
+        KeySignal:Fire()
+    end)
+end
+
+VerifyButton.Activated:Connect(verifyKey)
+KeyInput.FocusLost:Connect(function(enterPressed)
+    if enterPressed then
+        verifyKey()
+    end
+end)
+
+GetKeyButton.Activated:Connect(function()
+    local copied = pcall(function()
+        local copy = setclipboard or toclipboard or set_clipboard
+        if copy then
+            copy(KeyLink)
+        end
+    end)
+    local opened = pcall(function()
+        KeyGuiService:OpenBrowserWindow(KeyLink)
+    end)
+    if opened then
+        KeyStatus.Text = "Key link opened"
+    elseif copied then
+        KeyStatus.Text = "Link copied to clipboard"
+    else
+        KeyStatus.Text = "Open the link manually to get your key"
+    end
+end)
+
+KeySignal.Event:Wait()
+KeySignal:Destroy()
+
+local function showLoadError(message)
+    warn("[Rivo Hub] Main UI failed to load: " .. tostring(message))
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "RivoHubLoadError"
+    gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = true
+    gui.DisplayOrder = 1000001
+    gui.Parent = KeyPlayerGui
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.fromOffset(440, 210)
+    frame.Position = UDim2.new(0.5, -220, 0.5, -105)
+    frame.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
+    frame.BorderSizePixel = 0
+    frame.Parent = gui
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 12)
+    corner.Parent = frame
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -24, 0, 38)
+    title.Position = UDim2.fromOffset(12, 8)
+    title.BackgroundTransparency = 1
+    title.Text = "RIVO HUB FAILED TO LOAD"
+    title.TextColor3 = Color3.fromRGB(255, 110, 110)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 16
+    title.Parent = frame
+    local details = Instance.new("TextLabel")
+    details.Size = UDim2.new(1, -24, 1, -58)
+    details.Position = UDim2.fromOffset(12, 48)
+    details.BackgroundTransparency = 1
+    details.Text = tostring(message)
+    details.TextColor3 = Color3.fromRGB(225, 225, 235)
+    details.Font = Enum.Font.Code
+    details.TextSize = 11
+    details.TextWrapped = true
+    details.TextXAlignment = Enum.TextXAlignment.Left
+    details.TextYAlignment = Enum.TextYAlignment.Top
+    details.Parent = frame
+end
+
+local function runRivoHub()
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local HttpService = game:GetService("HttpService")
@@ -12,7 +216,31 @@ local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid")
 
-local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+local function loadWindUI()
+    local urls = {
+        "https://github.com/Footagesus/WindUI/releases/latest/download/main.lua",
+        "https://raw.githubusercontent.com/Footagesus/WindUI/refs/heads/main/dist/main.lua",
+    }
+    local errors = {}
+    for _, url in ipairs(urls) do
+        local ok, result = pcall(function()
+            local response = game:HttpGet(url)
+            assert(type(response) == "string" and #response > 0, "Empty WindUI response")
+            local chunk, compileError = loadstring(response)
+            assert(type(chunk) == "function", tostring(compileError or "WindUI compile failed"))
+            local library = chunk()
+            assert(type(library) == "table" and type(library.CreateWindow) == "function", "WindUI did not return a valid library")
+            return library
+        end)
+        if ok then
+            return result
+        end
+        table.insert(errors, tostring(result))
+    end
+    error("WindUI could not load: " .. table.concat(errors, " | "))
+end
+
+local WindUI = loadWindUI()
 
 local Window = WindUI:CreateWindow({
     Title = "Rivo Hub",
@@ -743,3 +971,12 @@ if S.PerfectThrows then task.delay(3, enablePerfect) end
 if S.AutoEquipBest then setupAutoEquip() end
 if S.AutoHatchEggs then setupAutoHatch() end
 applyCharStats()
+end
+
+local ok, loadError = xpcall(runRivoHub, function(err)
+    return tostring(err)
+end)
+
+if not ok then
+    showLoadError(loadError)
+end
